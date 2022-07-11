@@ -49,9 +49,14 @@
 #include "em_ldma.h"
 #include "em_letimer.h"
 
+#include "mx25flash_spi.h"
+#include "bspconfig.h"
+
 /*******************************************************************************
  *******************************   DEFINES   ***********************************
  ******************************************************************************/
+
+#define POWER_DOWN_RAM  (0)//Set to 0 until all EM2 buffers in RAM are not linked to 16kB
 
 // Set CLK_ADC to 10MHz
 #define CLK_SRC_ADC_FREQ          20000000 // CLK_SRC_ADC
@@ -151,7 +156,7 @@
 LDMA_Descriptor_t descriptor;
 
 // buffer to store IADC samples
-uint32_t scanBuffer[NUM_SAMPLES];
+uint32_t scanBuffer[NUM_SAMPLES] = {0xFF};
 
 /**************************************************************************//**
  * @brief  GPIO Initializer
@@ -199,6 +204,9 @@ void initIADC (void)
   // Configure IADC clock source for use while in EM2
   CMU_ClockSelectSet(cmuClock_IADCCLK, cmuSelect_FSRCO);  // FSRCO - 20MHz
 
+  //init.iadcClkSuspend1 = true;//Turn off clocks between single acquisitions
+  init.iadcClkSuspend0 = true;//Turn off clocks between scan acquisitions
+
   // Modify init structs and initialize
   init.warmup = iadcWarmupNormal;
 
@@ -230,7 +238,8 @@ void initIADC (void)
 
   // Scan initialization
   initScan.triggerSelect = iadcTriggerSelPrs0PosEdge;
-  initScan.dataValidLevel = _IADC_SCANFIFOCFG_DVL_VALID2;
+  initScan.dataValidLevel = iadcFifoCfgDvl4;
+  initScan.alignment = iadcAlignLeft16;
 
   // Enable triggering of scan conversion
   initScan.start = true;
@@ -317,11 +326,11 @@ void initLetimer(void)
   letimerInit.ufoa0 = letimerUFOAPulse;
   letimerInit.repMode = letimerRepeatFree;
 
-  // Enable LETIMER0 output0
-  GPIO->LETIMERROUTE.ROUTEEN = GPIO_LETIMER_ROUTEEN_OUT0PEN;
-  GPIO->LETIMERROUTE.OUT0ROUTE = \
-      (LETIMER_OUTPUT_0_PORT << _GPIO_LETIMER_OUT0ROUTE_PORT_SHIFT) \
-      | (LETIMER_OUTPUT_0_PIN << _GPIO_LETIMER_OUT0ROUTE_PIN_SHIFT);
+//  // Enable LETIMER0 output0
+//  GPIO->LETIMERROUTE.ROUTEEN = GPIO_LETIMER_ROUTEEN_OUT0PEN;
+//  GPIO->LETIMERROUTE.OUT0ROUTE = \
+//      (LETIMER_OUTPUT_0_PORT << _GPIO_LETIMER_OUT0ROUTE_PORT_SHIFT) \
+//      | (LETIMER_OUTPUT_0_PIN << _GPIO_LETIMER_OUT0ROUTE_PIN_SHIFT);
 
   // Initialize LETIMER
   LETIMER_Init(LETIMER0, &letimerInit);
@@ -354,7 +363,8 @@ void initLDMA(uint32_t *buffer, uint32_t size)
 
   // Interrupt upon transfer complete
   descriptor.xfer.doneIfs = 1;
-  descriptor.xfer.ignoreSrec = 0;
+  descriptor.xfer.ignoreSrec = 1;
+  descriptor.xfer.blockSize = ldmaCtrlBlockSizeUnit4;
 
   // Initialize LDMA with default configuration
   LDMA_Init(&init);
@@ -372,7 +382,7 @@ void LDMA_IRQHandler(void)
   LDMA_IntClear(LDMA_IF_DONE0);
 
   // Toggle LED0 to notify that transfers are complete
-  GPIO_PinOutToggle(LDMA_OUTPUT_0_PORT, LDMA_OUTPUT_0_PIN);
+  //GPIO_PinOutToggle(LDMA_OUTPUT_0_PORT, LDMA_OUTPUT_0_PIN);
 }
 
 /**************************************************************************//**
@@ -380,7 +390,50 @@ void LDMA_IRQHandler(void)
  *****************************************************************************/
 int main(void)
 {
+  FlashStatus status;
+
   CHIP_Init();
+
+  // Turn on DCDC regulator
+  EMU_DCDCInit_TypeDef dcdcInit = EMU_DCDCINIT_WSTK_DEFAULT;
+  EMU_DCDCInit(&dcdcInit);
+
+  /*
+   * When developing or debugging code that enters EM2 or
+   *  lower, it's a good idea to have an "escape hatch" type
+   * mechanism, e.g. a way to pause the device so that a debugger can
+   * connect in order to erase flash, among other things.
+   *
+   * Before proceeding with this example, make sure PB0 is not pressed.
+   * If the PB0 pin is low, turn on LED0 and execute the breakpoint
+   * instruction to stop the processor in EM0 and allow a debug
+   * connection to be made.
+   */
+  CMU_ClockEnable(cmuClock_GPIO, true);
+  GPIO_PinModeSet(BSP_GPIO_PB0_PORT, BSP_GPIO_PB0_PIN, gpioModeInputPullFilter, 1);
+  if (GPIO_PinInGet(BSP_GPIO_PB0_PORT, BSP_GPIO_PB0_PIN) == 0) {
+    GPIO_PinModeSet(BSP_GPIO_LED0_PORT, BSP_GPIO_LED0_PIN, gpioModePushPull, 1);
+    __BKPT(0);
+  }
+  // Pin not asserted, so disable input
+  else {
+    GPIO_PinModeSet(BSP_GPIO_PB0_PORT, BSP_GPIO_PB0_PIN, gpioModeDisabled, 0);
+    CMU_ClockEnable(cmuClock_GPIO, false);
+  }
+
+  // Enable voltage downscaling in EM mode 2(VSCALE0)
+  EMU_EM23Init_TypeDef em23Init = EMU_EM23INIT_DEFAULT;
+  em23Init.vScaleEM23Voltage = emuVScaleEM23_LowPower;
+
+  // Initialize EM23 energy modes
+  EMU_EM23Init(&em23Init);
+
+  // Init and power-down MX25 SPI flash
+  MX25_init();
+  MX25_RSTEN();
+  MX25_RST(&status);
+  MX25_DP();
+  MX25_deinit();
 
   // Initialize GPIO
   initGPIO();
@@ -403,9 +456,19 @@ int main(void)
 #ifdef EM2DEBUG
 #if (EM2DEBUG == 1)
   // Enable debug connectivity in EM2
-  EMU->CTRL_SET = EMU_CTRL_EM2DBGEN;
+  //EMU->CTRL_SET = EMU_CTRL_EM2DBGEN;
 #endif
 #endif
+
+  // Power down all RAM blocks except block 0
+  if (POWER_DOWN_RAM) {
+
+    /* Disable Radio RAM memories (FRC and SEQ) */
+    CMU_ClockEnable(cmuClock_SYSCFG, true);
+    SYSCFG->RADIORAMRETNCTRL = 0x103UL;
+
+    EMU_RamPowerDown(SRAM_BASE, 0);//0 means all extinguishable RAM
+  }
 
   while (1)
   {

@@ -59,6 +59,7 @@ int main(void)
 
   // Turn on DCDC regulator
   EMU_DCDCInit_TypeDef dcdcInit = EMU_DCDCINIT_WSTK_DEFAULT;
+  dcdcInit.mode = emuDcdcMode_Bypass;
   EMU_DCDCInit(&dcdcInit);
 
   /*

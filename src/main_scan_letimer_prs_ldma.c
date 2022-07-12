@@ -124,17 +124,9 @@
 #define IADC_NEG_INPUT_5_BUSALLOC     GPIO_ABUSALLOC_AODD0_ADC0
 
 
-// LDMA transfer complete GPIO toggle port/pin
-#define LDMA_OUTPUT_0_PORT        gpioPortD
-#define LDMA_OUTPUT_0_PIN         2
-
 // Desired LETIMER frequency in Hz
 #define LETIMER_FREQ              1
 #define LETIMER_SAMPLING_TICK     14u
-
-// LETIMER GPIO toggle port/pin (toggled in EM2; requires port A/B GPIO)
-#define LETIMER_OUTPUT_0_PORT     gpioPortA
-#define LETIMER_OUTPUT_0_PIN      5
 
 // Use specified LDMA/PRS channel
 #define IADC_LDMA_CH              0
@@ -142,11 +134,6 @@
 
 // How many samples to capture
 #define NUM_SAMPLES               64
-
-/* This example enters EM2 in the infinite while loop; Setting this define to 1
- * enables debug connectivity in the EMU_CTRL register, which will consume about
- * 0.5uA additional supply current */
-#define EM2DEBUG                  1
 
 /*******************************************************************************
  ***************************   GLOBAL VARIABLES   *******************************
@@ -157,19 +144,6 @@ LDMA_Descriptor_t descriptor;
 
 // buffer to store IADC samples
 uint32_t scanBuffer[NUM_SAMPLES] = {0xFF};
-
-/**************************************************************************//**
- * @brief  GPIO Initializer
- *****************************************************************************/
-void initGPIO (void)
-{
-  // Enable GPIO clock branch
-  CMU_ClockEnable(cmuClock_GPIO, true);
-
-  // Configure LDMA/LETIMER as outputs
-  GPIO_PinModeSet(LDMA_OUTPUT_0_PORT, LDMA_OUTPUT_0_PIN, gpioModePushPull, 0);
-  GPIO_PinModeSet(LETIMER_OUTPUT_0_PORT, LETIMER_OUTPUT_0_PIN, gpioModePushPull, 0);
-}
 
 /**************************************************************************//**
  * @brief  PRS Initializer
@@ -224,6 +198,7 @@ void initIADC (void)
    */
   initAllConfigs.configs[0].reference = iadcCfgReferenceInt1V2;
   initAllConfigs.configs[0].vRef = 1210;
+
   initAllConfigs.configs[0].osrHighSpeed = iadcCfgOsrHighSpeed32x;
   initAllConfigs.configs[0].analogGain = iadcCfgAnalogGain4x;
 
@@ -235,6 +210,12 @@ void initIADC (void)
                                                                     0,
                                                                     iadcCfgModeNormal,
                                                                     init.srcClkPrescale);
+
+
+
+
+  //initAllConfigs.configs[1].osrHighSpeed = iadcCfgOsrHighSpeed32x;
+  //initAllConfigs.configs[1].analogGain = iadcCfgAnalogGain4x;
 
   // Scan initialization
   initScan.triggerSelect = iadcTriggerSelPrs0PosEdge;
@@ -326,12 +307,6 @@ void initLetimer(void)
   letimerInit.ufoa0 = letimerUFOAPulse;
   letimerInit.repMode = letimerRepeatFree;
 
-//  // Enable LETIMER0 output0
-//  GPIO->LETIMERROUTE.ROUTEEN = GPIO_LETIMER_ROUTEEN_OUT0PEN;
-//  GPIO->LETIMERROUTE.OUT0ROUTE = \
-//      (LETIMER_OUTPUT_0_PORT << _GPIO_LETIMER_OUT0ROUTE_PORT_SHIFT) \
-//      | (LETIMER_OUTPUT_0_PIN << _GPIO_LETIMER_OUT0ROUTE_PIN_SHIFT);
-
   // Initialize LETIMER
   LETIMER_Init(LETIMER0, &letimerInit);
 }
@@ -381,8 +356,6 @@ void LDMA_IRQHandler(void)
   // Clear interrupt flags
   LDMA_IntClear(LDMA_IF_DONE0);
 
-  // Toggle LED0 to notify that transfers are complete
-  //GPIO_PinOutToggle(LDMA_OUTPUT_0_PORT, LDMA_OUTPUT_0_PIN);
 }
 
 /**************************************************************************//**
@@ -396,6 +369,7 @@ int main(void)
 
   // Turn on DCDC regulator
   EMU_DCDCInit_TypeDef dcdcInit = EMU_DCDCINIT_WSTK_DEFAULT;
+  dcdcInit.mode = emuDcdcMode_Bypass;
   EMU_DCDCInit(&dcdcInit);
 
   /*
@@ -435,9 +409,6 @@ int main(void)
   MX25_DP();
   MX25_deinit();
 
-  // Initialize GPIO
-  initGPIO();
-
   // Initialize PRS
   initPRS();
 
@@ -452,13 +423,6 @@ int main(void)
 
   // Initialize the LETIMER
   initLetimer();
-
-#ifdef EM2DEBUG
-#if (EM2DEBUG == 1)
-  // Enable debug connectivity in EM2
-  //EMU->CTRL_SET = EMU_CTRL_EM2DBGEN;
-#endif
-#endif
 
   // Power down all RAM blocks except block 0
   if (POWER_DOWN_RAM) {

@@ -60,7 +60,10 @@
 
 // Set CLK_ADC to 10MHz
 #define CLK_SRC_ADC_FREQ          20000000 // CLK_SRC_ADC
-#define CLK_ADC_FREQ              4500000 // CLK_ADC - 10MHz max in normal mode
+
+// Takes Errata IADC_E306 into account
+#define CLK_ADC_FREQ_GAIN_4X      2500000 // CLK_ADC - 2.5MHz max in gain 4x
+#define CLK_ADC_FREQ_GAIN_0P5X    10000000 // CLK_ADC - 10MHz max in 0.5x gain
 
 // Number of scan channels
 #define NUM_INPUTS 6
@@ -196,6 +199,7 @@ void initIADC (void)
    * selected oversampling ratio (osrHighSpeed), which defaults to
    * 2x and generates 12-bit results.
    */
+  //I measurements
   initAllConfigs.configs[0].reference = iadcCfgReferenceInt1V2;
   initAllConfigs.configs[0].vRef = 1210;
 
@@ -206,16 +210,29 @@ void initIADC (void)
   // Default oversampling (OSR) is 2x, and Conversion Time = ((4 * OSR) + 2) / fCLK_ADC
   // Combined with the 2 cycle delay when switching input channels, total sample rate is 833ksps
   initAllConfigs.configs[0].adcClkPrescale = IADC_calcAdcClkPrescale(IADC0,
-                                                                    CLK_ADC_FREQ,
-                                                                    0,
-                                                                    iadcCfgModeNormal,
-                                                                    init.srcClkPrescale);
+                                                                     CLK_ADC_FREQ_GAIN_4X,
+                                                                     0,
+                                                                     iadcCfgModeNormal,
+                                                                     init.srcClkPrescale);
 
 
 
+  //U measurements
+  initAllConfigs.configs[1].reference = iadcCfgReferenceInt1V2;
+  initAllConfigs.configs[1].vRef = 1210;
 
-  //initAllConfigs.configs[1].osrHighSpeed = iadcCfgOsrHighSpeed32x;
-  //initAllConfigs.configs[1].analogGain = iadcCfgAnalogGain4x;
+  initAllConfigs.configs[1].osrHighSpeed = iadcCfgOsrHighSpeed2x;
+  initAllConfigs.configs[1].analogGain = iadcCfgAnalogGain0P5x;
+
+  // Divides CLK_SRC_ADC to set the CLK_ADC frequency
+  // Default oversampling (OSR) is 2x, and Conversion Time = ((4 * OSR) + 2) / fCLK_ADC
+  // Combined with the 2 cycle delay when switching input channels, total sample rate is 833ksps
+  initAllConfigs.configs[1].adcClkPrescale = IADC_calcAdcClkPrescale(IADC0,
+                                                                     CLK_ADC_FREQ_GAIN_0P5X,
+                                                                     0,
+                                                                     iadcCfgModeNormal,
+                                                                     init.srcClkPrescale);
+
 
   // Scan initialization
   initScan.triggerSelect = iadcTriggerSelPrs0PosEdge;
@@ -229,29 +246,36 @@ void initIADC (void)
   initScan.fifoDmaWakeup = true;
 
   // Configure entries in scan table
-  initScanTable.entries[0].posInput = IADC_INPUT_0_PORT_PIN;
-  initScanTable.entries[0].negInput = iadcNegInputGnd;
+  // Takes Errata IADC_E306 into account
+  initScanTable.entries[0].posInput = IADC_POS_INPUT_3_PORT_PIN;
+  initScanTable.entries[0].negInput = IADC_NEG_INPUT_3_PORT_PIN;
   initScanTable.entries[0].includeInScan = true;
+  initScanTable.entries[0].configId = 0;
 
-  initScanTable.entries[1].posInput = IADC_POS_INPUT_3_PORT_PIN;
-  initScanTable.entries[1].negInput = IADC_NEG_INPUT_3_PORT_PIN;
+  initScanTable.entries[1].posInput = IADC_INPUT_0_PORT_PIN;
+  initScanTable.entries[1].negInput = iadcNegInputGnd;
   initScanTable.entries[1].includeInScan = true;
+  initScanTable.entries[1].configId = 1;
 
   initScanTable.entries[2].posInput = IADC_INPUT_1_PORT_PIN;
   initScanTable.entries[2].negInput = iadcNegInputGnd;
   initScanTable.entries[2].includeInScan = true;
+  initScanTable.entries[2].configId = 1;
 
   initScanTable.entries[3].posInput = IADC_POS_INPUT_4_PORT_PIN;
   initScanTable.entries[3].negInput = IADC_NEG_INPUT_4_PORT_PIN;
   initScanTable.entries[3].includeInScan = true;
+  initScanTable.entries[3].configId = 0;
 
   initScanTable.entries[4].posInput = IADC_INPUT_2_PORT_PIN;
   initScanTable.entries[4].negInput = iadcNegInputGnd;
   initScanTable.entries[4].includeInScan = true;
+  initScanTable.entries[4].configId = 1;
 
   initScanTable.entries[5].posInput = IADC_POS_INPUT_5_PORT_PIN;
   initScanTable.entries[5].negInput = IADC_NEG_INPUT_5_PORT_PIN;
   initScanTable.entries[5].includeInScan = true;
+  initScanTable.entries[5].configId = 0;
 
   // Initialize IADC
   IADC_init(IADC0, &init, &initAllConfigs);

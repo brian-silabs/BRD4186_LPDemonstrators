@@ -250,12 +250,12 @@ void initIADC (void)
   initScanTable.entries[0].posInput = IADC_POS_INPUT_3_PORT_PIN;
   initScanTable.entries[0].negInput = IADC_NEG_INPUT_3_PORT_PIN;
   initScanTable.entries[0].includeInScan = true;
-  initScanTable.entries[0].configId = 0;
+  initScanTable.entries[0].configId = 1;
 
   initScanTable.entries[1].posInput = IADC_INPUT_0_PORT_PIN;
   initScanTable.entries[1].negInput = iadcNegInputGnd;
   initScanTable.entries[1].includeInScan = true;
-  initScanTable.entries[1].configId = 1;
+  initScanTable.entries[1].configId = 0;
 
   initScanTable.entries[2].posInput = IADC_INPUT_1_PORT_PIN;
   initScanTable.entries[2].negInput = iadcNegInputGnd;
@@ -277,6 +277,12 @@ void initIADC (void)
   initScanTable.entries[5].includeInScan = true;
   initScanTable.entries[5].configId = 0;
 
+  //TODO would this be skippabe by LDMA
+  //initScanTable.entries[6].posInput = IADC_POS_INPUT_5_PORT_PIN;
+  //initScanTable.entries[6].negInput = IADC_NEG_INPUT_5_PORT_PIN;
+  //initScanTable.entries[6].includeInScan = true;
+  //initScanTable.entries[6].configId = 1;
+  
   // Initialize IADC
   IADC_init(IADC0, &init, &initAllConfigs);
 
